@@ -12,7 +12,7 @@ import {
     addSubcategory, 
     addDetail 
 } from '../controllers/categoryController.js';
-import uploadFields from '../middlewares/Multer.js';
+import uploadFields from '../middlewares/multer.js';
 import { isAuthenticated, isSuperAdminOnly, isAdminOrManager } from '../middlewares/authMiddleware.js';
 import verifyToken from '../middlewares/verifyToken.js';
 import managerCategoryAccess from '../middlewares/managerCategoryAccess.js';
