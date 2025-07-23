@@ -1,6 +1,7 @@
 import Category from '../models/Category.js';
 import getImageUrl from '../utils/getImageUrl.js';
 import User from '../models/User.js';
+import saveBase64Image from '../utils/saveBase64Image.js';
 
 // Helper to convert local image path to full URL
 // const getImageUrl = (req, imagePath) => {
@@ -35,48 +36,34 @@ import User from '../models/User.js';
 
 export const addCategory = async (req, res) => {
     try {
-        const { name, subcategories } = req.body;
+        const { name, subcategories, categoryImageBase64 } = req.body;
 
-        // Use correct field name from multer config
-        const image = req.files['categoryImage']?.[0]?.path;
-
-        if (!name || !image || !subcategories) {
+        if (!name || !categoryImageBase64 || !subcategories) {
             return res.status(400).json({ success: false, message: 'Required fields missing' });
         }
 
-        // Parse subcategories JSON string (sent from Postman)
+        // Save category image from base64
+        const image = saveBase64Image(categoryImageBase64);
+
+        // Parse subcategories JSON string (sent from frontend)
         const parsedSubcategories = JSON.parse(subcategories);
 
-        // Use correct field names from multer config
-        const subcategoryImages = req.files['subcategoryImages'] || [];
-        const detailImages = req.files['detailImages'] || [];
-
-        // Attach images to subcategories and details
-        let subImageIndex = 0;
-        let detailImageIndex = 0;
-
         const finalSubcategories = parsedSubcategories.map(sub => {
-            const subImage = subcategoryImages[subImageIndex]?.path || null;
-            subImageIndex++;
-
+            // Handle subcategory image if needed (not required in schema)
+            let subImage = null;
+            if (sub.subcategoryImageBase64) {
+                subImage = saveBase64Image(sub.subcategoryImageBase64);
+            }
             const details = sub.details.map(detail => {
-                const detailImage = detailImages[detailImageIndex]?.path;
-                const price = detail.price;
-                const isLocked = detail.isLocked || false;
-                detailImageIndex++;
-
-                // Ensure image is provided for details (since it's required in schema)
-                if (!detailImage) {
-                    throw new Error(`Detail image is required for subcategory "${sub.name}" but not provided`);
+                if (!detail.detailImageBase64) {
+                    throw new Error(`Detail image is required for subcategory "${sub.name}"`);
                 }
-
                 return {
-                    image: detailImage,
-                    price,
-                    isLocked
+                    image: saveBase64Image(detail.detailImageBase64),
+                    price: detail.price,
+                    isLocked: detail.isLocked || false
                 };
             });
-
             return {
                 name: sub.name,
                 image: subImage,
@@ -159,8 +146,7 @@ export const getAllCategoriesGlobal = async (req, res) => {
 export const updateCategory = async (req, res) => {
     try {
         const { id } = req.params;
-        const { name } = req.body;
-        const image = req.files['categoryImage']?.[0]?.path;
+        const { name, categoryImageBase64 } = req.body;
 
         // Find the category
         const category = await Category.findById(id);
@@ -170,7 +156,10 @@ export const updateCategory = async (req, res) => {
 
         // Update category fields
         if (name) category.name = name;
-        if (image) category.image = image;
+        if (categoryImageBase64) {
+            const image = saveBase64Image(categoryImageBase64);
+            category.image = image;
+        }
 
         await category.save();
         res.status(200).json({ success: true, category });
@@ -202,34 +191,24 @@ export const deleteCategory = async (req, res) => {
 export const updateSubcategory = async (req, res) => {
     try {
         const { categoryId, subcategoryId } = req.params;
-        const { name } = req.body;
-        // Use subcategoryImages field from multer config
-        const image = req.files?.['subcategoryImages']?.[0]?.path;
-
-        console.log('Update Subcategory Request:', {
-            categoryId,
-            subcategoryId,
-            name,
-            image: image ? 'Image uploaded' : 'No image uploaded',
-            files: req.files
-        });
-
+        const { name, subcategoryImageBase64 } = req.body;
+        let image = null;
+        if (subcategoryImageBase64) {
+            image = saveBase64Image(subcategoryImageBase64);
+        }
         // Find the category
         const category = await Category.findById(categoryId);
         if (!category) {
             return res.status(404).json({ success: false, message: 'Category not found' });
         }
-
         // Find the subcategory
         const subcategory = category.subcategories.id(subcategoryId);
         if (!subcategory) {
             return res.status(404).json({ success: false, message: 'Subcategory not found' });
         }
-
         // Update subcategory fields
         if (name) subcategory.name = name;
         if (image) subcategory.image = image;
-
         await category.save();
         res.status(200).json({ success: true, category });
     } catch (error) {
@@ -264,43 +243,30 @@ export const deleteSubcategory = async (req, res) => {
 export const updateDetail = async (req, res) => {
     try {
         const { categoryId, subcategoryId, detailId } = req.params;
-        const { price, isLocked } = req.body;
-        // Use detailImages field from multer config
-        const image = req.files?.['detailImages']?.[0]?.path;
-
-        console.log('Update Detail Request:', {
-            categoryId,
-            subcategoryId,
-            detailId,
-            price,
-            isLocked,
-            image: image ? 'Image uploaded' : 'No image uploaded',
-            files: req.files
-        });
-
+        const { price, isLocked, detailImageBase64 } = req.body;
+        let image = null;
+        if (detailImageBase64) {
+            image = saveBase64Image(detailImageBase64);
+        }
         // Find the category
         const category = await Category.findById(categoryId);
         if (!category) {
             return res.status(404).json({ success: false, message: 'Category not found' });
         }
-
         // Find the subcategory
         const subcategory = category.subcategories.id(subcategoryId);
         if (!subcategory) {
             return res.status(404).json({ success: false, message: 'Subcategory not found' });
         }
-
         // Find the detail
         const detail = subcategory.details.id(detailId);
         if (!detail) {
             return res.status(404).json({ success: false, message: 'Detail not found' });
         }
-
         // Update detail fields
         if (price) detail.price = price;
+        if (typeof isLocked !== 'undefined') detail.isLocked = isLocked;
         if (image) detail.image = image;
-        if (isLocked !== undefined) detail.isLocked = isLocked;
-
         await category.save();
         res.status(200).json({ success: true, category });
     } catch (error) {
@@ -341,8 +307,11 @@ export const deleteDetail = async (req, res) => {
 export const addSubcategory = async (req, res) => {
     try {
         const { categoryId } = req.params;
-        const { name, details } = req.body;
-        const image = req.files?.['subcategoryImages']?.[0]?.path;
+        const { name, details, subcategoryImageBase64 } = req.body;
+        let image = null;
+        if (subcategoryImageBase64) {
+            image = saveBase64Image(subcategoryImageBase64);
+        }
         if (!name) {
             return res.status(400).json({ success: false, message: 'Name is required' });
         }
@@ -357,12 +326,11 @@ export const addSubcategory = async (req, res) => {
             if (typeof details === 'string') {
                 parsedDetails = JSON.parse(details);
             }
-            // Attach images to details if provided
-            const detailImages = req.files?.['detailImages'] || [];
-            let detailImageIndex = 0;
             finalDetails = parsedDetails.map(detail => {
-                const detailImage = detailImages[detailImageIndex]?.path;
-                detailImageIndex++;
+                let detailImage = null;
+                if (detail.detailImageBase64) {
+                    detailImage = saveBase64Image(detail.detailImageBase64);
+                }
                 if (!detailImage) {
                     throw new Error('Detail image is required');
                 }
@@ -386,8 +354,11 @@ export const addSubcategory = async (req, res) => {
 export const addDetail = async (req, res) => {
     try {
         const { categoryId, subcategoryId } = req.params;
-        const { price, isLocked } = req.body;
-        const image = req.files?.['detailImages']?.[0]?.path;
+        const { price, isLocked, detailImageBase64 } = req.body;
+        let image = null;
+        if (detailImageBase64) {
+            image = saveBase64Image(detailImageBase64);
+        }
         if (!price || !image) {
             return res.status(400).json({ success: false, message: 'Price and image are required' });
         }
